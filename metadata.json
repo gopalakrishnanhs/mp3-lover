@@ -1,0 +1,6 @@
+{
+  "name": "AeroGlass Audio Player",
+  "description": "A windowed MP3 player with frosted glass interface blending Apple fluidity and WinUI acrylic ergonomics, featuring folder playback, playlist management, 10-band equalizer, and visualizer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
