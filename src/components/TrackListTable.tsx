@@ -182,12 +182,20 @@ export const TrackListTable: React.FC<TrackListTableProps> = ({
                     {/* Title & Artist */}
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        {/* Mini Gradient Thumbnail */}
+                        {/* Mini Thumbnail */}
                         <div
-                          className="w-7 h-7 rounded-md shrink-0 flex items-center justify-center shadow-sm"
+                          className="w-7 h-7 rounded-md shrink-0 flex items-center justify-center shadow-sm overflow-hidden relative border border-white/10"
                           style={{ background: track.coverGradient }}
                         >
-                          <Music className="w-3.5 h-3.5 text-white/90" />
+                          {track.coverUrl ? (
+                            <img
+                              src={track.coverUrl}
+                              alt={track.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Music className="w-3.5 h-3.5 text-white/90" />
+                          )}
                         </div>
                         <div className="min-w-0">
                           <span

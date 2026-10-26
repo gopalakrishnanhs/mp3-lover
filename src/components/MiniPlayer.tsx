@@ -61,10 +61,18 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <div
-            className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center shadow-md border border-white/15"
+            className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center shadow-md border border-white/15 overflow-hidden relative"
             style={{ background: currentTrack?.coverGradient || '#1e293b' }}
           >
-            <Music className="w-4 h-4 text-white" />
+            {currentTrack?.coverUrl ? (
+              <img
+                src={currentTrack.coverUrl}
+                alt={currentTrack.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Music className="w-4 h-4 text-white" />
+            )}
           </div>
           <div className="min-w-0">
             <span className="block text-xs font-bold text-white truncate">

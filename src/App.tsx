@@ -9,7 +9,6 @@ import {
   INITIAL_TRACKS, 
   INITIAL_PLAYLISTS, 
   EQUALIZER_PRESETS,
-  EQ_FREQUENCIES,
   THEME_PRESETS
 } from './utils/demoData';
 import { audioEngine } from './utils/audioEngine';
@@ -25,7 +24,7 @@ import { PlayerControls } from './components/PlayerControls';
 import { NewPlaylistModal } from './components/NewPlaylistModal';
 import { ThemeCustomizerModal } from './components/ThemeCustomizerModal';
 import { MiniPlayer } from './components/MiniPlayer';
-import { FolderPlus, UploadCloud, CheckCircle2, Music, Sparkles } from 'lucide-react';
+import { UploadCloud, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   // Navigation & Window State
@@ -59,7 +58,7 @@ export default function App() {
     }
   }, [theme]);
 
-  // Audio Playback State - starts completely empty with 0 static songs!
+  // Audio Playback State - starts completely empty with 0 static songs
   const [tracks, setTracks] = useState<Track[]>(INITIAL_TRACKS);
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     const saved = localStorage.getItem('aeroglass_playlists');
@@ -118,19 +117,106 @@ export default function App() {
     }, 4000);
   };
 
-  // Windows File Association & Open File from Electron
+  // Play a specific track
+  const handlePlayTrack = async (track: Track) => {
+    setCurrentTrackId(track.id);
+    setDuration(track.duration || 180);
+    setCurrentTime(0);
+
+    let playUrl = track.url;
+    if (!playUrl) {
+      playUrl = await generateSynthesizedTrack('synthwave', track.duration || 45);
+      setTracks((prev) =>
+        prev.map((t) => (t.id === track.id ? { ...t, url: playUrl } : t))
+      );
+    }
+
+    // Delayed metadata & album art extraction if not already present
+    if (!track.coverUrl && track.folderPath) {
+      const electron = (window as unknown as {
+        electronAPI?: {
+          readMetadata?: (p: string) => Promise<{ title?: string; artist?: string; album?: string; year?: string; coverUrl?: string; } | null>;
+        };
+      }).electronAPI;
+
+      if (electron?.readMetadata) {
+        electron.readMetadata(track.folderPath).then((meta) => {
+          if (meta && (meta.coverUrl || meta.title)) {
+            setTracks((prev) =>
+              prev.map((t) =>
+                t.id === track.id
+                  ? {
+                      ...t,
+                      coverUrl: meta.coverUrl || t.coverUrl,
+                      title: meta.title || t.title,
+                      artist: meta.artist || t.artist,
+                      album: meta.album || t.album,
+                      year: meta.year || t.year
+                    }
+                  : t
+              )
+            );
+          }
+        }).catch((e) => console.warn('readMetadata error:', e));
+      }
+    }
+
+    await audioEngine.setSource(playUrl, true);
+    setIsPlaying(true);
+  };
+
+  // Windows File Association & Launch File Handling
   useEffect(() => {
-    const electron = (window as unknown as { electronAPI?: { onOpenFile?: (cb: (fp: string) => void) => void } }).electronAPI;
-    if (electron?.onOpenFile) {
-      electron.onOpenFile((filePath: string) => {
-        const fileName = filePath.split(/[/\\]/).pop() || 'Track';
-        const [track] = parseNativeFiles([{ filePath, fileName, size: 0 }]);
-        if (track) {
-          setTracks((prev) => [track, ...prev.filter((t) => t.folderPath !== filePath)]);
-          handlePlayTrack(track);
-          showToast(`Playing "${track.title}" from Windows`);
+    const electron = (window as unknown as { 
+      electronAPI?: { 
+        onOpenFile?: (cb: (fp: string) => void) => void;
+        getInitialFile?: () => Promise<string | null>;
+        readMetadata?: (fp: string) => Promise<{ title?: string; artist?: string; album?: string; year?: string; coverUrl?: string; } | null>;
+      } 
+    }).electronAPI;
+
+    const handleLoadPath = async (filePath: string) => {
+      if (!filePath) return;
+      const fileName = filePath.split(/[/\\]/).pop() || 'Track';
+      let meta: any = null;
+      if (electron?.readMetadata) {
+        try {
+          meta = await electron.readMetadata(filePath);
+        } catch (e) {
+          console.warn('readMetadata error on launch file:', e);
         }
-      });
+      }
+      const [track] = parseNativeFiles([{ filePath, fileName, size: 0, metadata: meta }]);
+      if (track) {
+        setTracks((prev) => {
+          const filtered = prev.filter((t) => t.folderPath !== filePath);
+          return [track, ...filtered];
+        });
+        setPlaylists((prev) =>
+          prev.map((pl) => {
+            if (pl.id === 'playlist-all' && !pl.trackIds.includes(track.id)) {
+              return { ...pl, trackIds: [track.id, ...pl.trackIds] };
+            }
+            return pl;
+          })
+        );
+        handlePlayTrack(track);
+        showToast(`Playing "${track.title}"`);
+      }
+    };
+
+    // Check if app was launched via double-clicking an MP3 file
+    if (electron?.getInitialFile) {
+      electron.getInitialFile().then((initialPath) => {
+        if (initialPath) {
+          handleLoadPath(initialPath);
+        }
+      }).catch((e) => console.warn('getInitialFile error:', e));
+    }
+
+    // Listen for subsequent file opens while running
+    if (electron?.onOpenFile) {
+      electron.onOpenFile(handleLoadPath);
     }
   }, []);
 
@@ -164,25 +250,6 @@ export default function App() {
       console.warn('Audio playback error:', err);
     });
   }, [currentTrackId, repeatMode, isShuffle, activePlaylistId, tracks]);
-
-  // Play a specific track
-  const handlePlayTrack = async (track: Track) => {
-    setCurrentTrackId(track.id);
-    setDuration(track.duration || 180);
-    setCurrentTime(0);
-
-    // If track URL is not yet synthesized, synthesize immediately
-    let playUrl = track.url;
-    if (!playUrl) {
-      playUrl = await generateSynthesizedTrack('synthwave', track.duration || 45);
-      setTracks((prev) =>
-        prev.map((t) => (t.id === track.id ? { ...t, url: playUrl } : t))
-      );
-    }
-
-    await audioEngine.setSource(playUrl, true);
-    setIsPlaying(true);
-  };
 
   const handlePlay = async () => {
     if (!currentTrack) return;
@@ -226,7 +293,6 @@ export default function App() {
   const handlePrevTrack = () => {
     if (activePlaylistTracks.length === 0) return;
 
-    // If more than 3 seconds in, restart track
     if (currentTime > 3) {
       audioEngine.seek(0);
       return;
@@ -284,7 +350,7 @@ export default function App() {
     setIsShuffle(!isShuffle);
   };
 
-  // A-B Repeat (GOM Audio signature)
+  // A-B Repeat (GOM Audio feature)
   const handleSetPointA = () => {
     const a = Math.floor(currentTime);
     const newAB = { ...abRepeat, a, active: abRepeat.b !== null && abRepeat.b > a };
@@ -302,7 +368,7 @@ export default function App() {
     const newAB = { ...abRepeat, b, active: abRepeat.a !== null && b > abRepeat.a };
     setAbRepeat(newAB);
     audioEngine.setABRepeat(newAB.a, newAB.b, newAB.active);
-    showToast(`Loop Point B set. A-B Loop active!`);
+    showToast('Loop Point B set. A-B Loop active!');
   };
 
   const handleClearAB = () => {
@@ -332,7 +398,6 @@ export default function App() {
 
   const handlePreampChange = (gain: number) => {
     setPreampGain(gain);
-    // Convert preamp dB to linear gain multiplier
     const linearGain = Math.pow(10, gain / 20);
     audioEngine.setVolume(volume * linearGain);
   };
@@ -404,7 +469,6 @@ export default function App() {
     showToast('Track removed from playlist');
   };
 
-  // Update track lyrics
   const handleUpdateLyrics = (trackId: string, lyrics: string) => {
     setTracks((prev) =>
       prev.map((t) => (t.id === trackId ? { ...t, lyrics } : t))
@@ -412,7 +476,7 @@ export default function App() {
     showToast('Lyrics updated');
   };
 
-  // FOLDER IMPORT: Play all songs in folder (GOM Audio signature feature!)
+  // FOLDER IMPORT: Play all songs in folder (GOM Audio signature feature)
   const handleOpenFolderClick = async () => {
     const electron = (window as unknown as { 
       electronAPI?: { 
@@ -427,7 +491,7 @@ export default function App() {
           showToast('No audio files found in selected folder');
           return;
         }
-        const newTracks = parseNativeFiles(res.files);
+        const newTracks = parseNativeFiles(res.files, res.folderName);
         const playlistName = res.folderName ? `📁 ${res.folderName}` : `Folder Import (${newTracks.length} songs)`;
         const newTrackIds = newTracks.map((t) => t.id);
 
@@ -505,13 +569,10 @@ export default function App() {
     const playlistName = folderName ? `📁 ${folderName}` : `Folder Import (${newTracks.length} songs)`;
     const newTrackIds = newTracks.map((t) => t.id);
 
-    // Add to library
     setTracks((prev) => [...prev, ...newTracks]);
 
-    // Create a dedicated playlist for this folder
     const folderPlaylist = createPlaylistFromFolder(playlistName, newTrackIds);
     setPlaylists((prev) => {
-      // Also add to 'All Tracks'
       const updated = prev.map((pl) => {
         if (pl.id === 'playlist-all') {
           return { ...pl, trackIds: [...pl.trackIds, ...newTrackIds] };
@@ -521,15 +582,11 @@ export default function App() {
       return [...updated, folderPlaylist];
     });
 
-    // Select this playlist
     setActivePlaylistId(folderPlaylist.id);
-
-    // Start playing the first track in the folder immediately!
     await handlePlayTrack(newTracks[0]);
     setCurrentTab('player');
     showToast(`Loaded folder "${playlistName}" (${newTracks.length} tracks). Playing now!`);
 
-    // Reset input
     e.target.value = '';
   };
 
@@ -546,7 +603,6 @@ export default function App() {
     const newTrackIds = newTracks.map((t) => t.id);
     setTracks((prev) => [...prev, ...newTracks]);
 
-    // Add to current playlist and All Tracks
     setPlaylists((prev) =>
       prev.map((pl) => {
         if (pl.id === activePlaylistId || pl.id === 'playlist-all') {
@@ -561,7 +617,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Drag and Drop Handling
+  // Drag and Drop Handling (Native Windows & Browser)
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -579,20 +635,80 @@ export default function App() {
     e.stopPropagation();
     setIsDragOver(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const { tracks: newTracks, folderName } = await parseAudioFiles(e.dataTransfer.files);
-      if (newTracks.length > 0) {
-        const title = folderName ? `📁 ${folderName}` : `Dropped Music (${newTracks.length})`;
-        const newTrackIds = newTracks.map((t) => t.id);
-        setTracks((prev) => [...prev, ...newTracks]);
+    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
 
-        const folderPlaylist = createPlaylistFromFolder(title, newTrackIds);
-        setPlaylists((prev) => [...prev, folderPlaylist]);
-        setActivePlaylistId(folderPlaylist.id);
-        handlePlayTrack(newTracks[0]);
-        setCurrentTab('player');
-        showToast(`Imported ${newTracks.length} dropped tracks and playing!`);
+    const electron = (window as unknown as { 
+      electronAPI?: { 
+        getPathForFile?: (f: File) => string;
+        scanPath?: (p: string) => Promise<{ isFolder: boolean; folderName?: string; files: { filePath: string; fileName: string; size: number }[] } | null>;
+      } 
+    }).electronAPI;
+
+    // In Electron, use native filesystem scanning for dropped files/folders
+    if (electron?.getPathForFile && electron?.scanPath) {
+      try {
+        const allFiles: { filePath: string; fileName: string; size: number }[] = [];
+        let detectedFolderName: string | undefined;
+
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          const file = e.dataTransfer.files[i];
+          const realPath = electron.getPathForFile(file);
+          if (realPath) {
+            const scanResult = await electron.scanPath(realPath);
+            if (scanResult && scanResult.files.length > 0) {
+              if (scanResult.isFolder && !detectedFolderName) {
+                detectedFolderName = scanResult.folderName;
+              }
+              allFiles.push(...scanResult.files);
+            }
+          }
+        }
+
+        if (allFiles.length > 0) {
+          const newTracks = parseNativeFiles(allFiles, detectedFolderName);
+          const playlistTitle = detectedFolderName 
+            ? `📁 ${detectedFolderName}` 
+            : `Imported Tracks (${newTracks.length})`;
+          const newTrackIds = newTracks.map((t) => t.id);
+
+          setTracks((prev) => [...prev, ...newTracks]);
+          const folderPlaylist = createPlaylistFromFolder(playlistTitle, newTrackIds);
+          setPlaylists((prev) => {
+            const updated = prev.map((pl) => {
+              if (pl.id === 'playlist-all') {
+                return { ...pl, trackIds: [...pl.trackIds, ...newTrackIds] };
+              }
+              return pl;
+            });
+            return [...updated, folderPlaylist];
+          });
+
+          setActivePlaylistId(folderPlaylist.id);
+          await handlePlayTrack(newTracks[0]);
+          setCurrentTab('player');
+          showToast(`Imported ${newTracks.length} tracks and started playback!`);
+          return;
+        }
+      } catch (err) {
+        console.warn('Native drag & drop scan failed, falling back:', err);
       }
+    }
+
+    // Web browser fallback
+    const { tracks: newTracks, folderName } = await parseAudioFiles(e.dataTransfer.files);
+    if (newTracks.length > 0) {
+      const title = folderName ? `📁 ${folderName}` : `Dropped Music (${newTracks.length})`;
+      const newTrackIds = newTracks.map((t: Track) => t.id);
+      setTracks((prev) => [...prev, ...newTracks]);
+
+      const folderPlaylist = createPlaylistFromFolder(title, newTrackIds);
+      setPlaylists((prev) => [...prev, folderPlaylist]);
+      setActivePlaylistId(folderPlaylist.id);
+      handlePlayTrack(newTracks[0]);
+      setCurrentTab('player');
+      showToast(`Imported ${newTracks.length} dropped tracks!`);
+    } else {
+      showToast('No supported audio files found');
     }
   };
 
@@ -605,7 +721,7 @@ export default function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Hidden file inputs: without accept="audio/*" on webkitdirectory so Windows doesn't filter out directory files */}
+      {/* Hidden file inputs */}
       <input
         type="file"
         ref={folderInputRef}
@@ -621,11 +737,11 @@ export default function App() {
         ref={filesInputRef}
         onChange={handleFilesSelected}
         multiple
-        accept=".mp3,.wav,.flac,.m4a,.aac,.ogg,.weba,.wma,.opus,audio/*"
+        accept=".mp3,.wav,.flac,.m4a,.aac,.ogg,.weba,.wma,.opus,.aiff,.alac,.ape,audio/*"
         className="hidden"
       />
 
-      {/* Modern Windows 11 Acrylic Desktop Canvas with ambient lighting */}
+      {/* Windows 11 Acrylic Desktop Canvas with ambient lighting */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div 
           className="absolute -top-32 -left-32 w-96 h-96 rounded-full blur-[130px] opacity-25 transition-all duration-700" 
@@ -639,7 +755,6 @@ export default function App() {
           className="absolute -bottom-32 left-1/3 w-[520px] h-[520px] rounded-full blur-[150px] opacity-20 transition-all duration-700" 
           style={{ background: `linear-gradient(${theme.angle || 135}deg, ${theme.color1}, ${theme.color2})` }}
         />
-        {/* Subtle grid pattern */}
         <div 
           className="absolute inset-0 opacity-[0.03]"
           style={{
@@ -651,18 +766,18 @@ export default function App() {
 
       {/* Drag & Drop Overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-50 bg-sky-950/80 backdrop-blur-md flex flex-col items-center justify-center text-white border-2 border-dashed border-sky-400 m-6 rounded-none animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-sky-950/85 backdrop-blur-md flex flex-col items-center justify-center text-white border-2 border-dashed border-sky-400 m-4 rounded-none animate-in fade-in duration-200">
           <UploadCloud className="w-16 h-16 text-sky-400 mb-4 animate-bounce" />
           <h2 className="text-2xl font-bold">Drop Audio Files or Folders Here</h2>
           <p className="text-sm text-sky-200 mt-2">
-            AeroGlass will automatically read all songs and start folder playback!
+            AeroGlass will automatically scan all songs and start folder playback!
           </p>
         </div>
       )}
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-slate-900/90 text-white text-xs font-medium rounded-md shadow-2xl border border-white/20 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-200">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-slate-900/95 text-white text-xs font-medium rounded-md shadow-2xl border border-white/20 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-200">
           <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -687,8 +802,8 @@ export default function App() {
           onRestoreFullWindow={() => setIsMiniMode(false)}
         />
       ) : (
-        /* Full Desktop Window - Windows UI Acrylic with crisp square corners (no round borders) */
-        <main className="relative z-10 w-full h-full max-w-[1240px] max-h-[820px] m-0 md:m-4 flex flex-col rounded-none glass-panel shadow-2xl overflow-hidden border border-white/15">
+        /* Full Desktop Window - Fully responsive, fluid layout without cramped scaling */
+        <main className="relative z-10 w-full h-full min-w-[760px] min-h-[500px] flex flex-col rounded-none glass-panel shadow-2xl overflow-hidden border border-white/15">
           {/* Window Header */}
           <WindowHeader
             currentTab={currentTab}
@@ -705,8 +820,8 @@ export default function App() {
             isPlaying={isPlaying}
           />
 
-          {/* Main Body Content based on Active Tab */}
-          <div className="flex-1 overflow-hidden flex">
+          {/* Main Body Content */}
+          <div className="flex-1 overflow-hidden flex min-h-0">
             {currentTab === 'player' && (
               <NowPlayingView
                 currentTrack={currentTrack}
@@ -721,7 +836,7 @@ export default function App() {
             )}
 
             {currentTab === 'library' && (
-              <div className="flex-1 flex w-full h-full overflow-hidden">
+              <div className="flex-1 flex w-full h-full overflow-hidden min-h-0">
                 <PlaylistSidebar
                   playlists={playlists}
                   activePlaylistId={activePlaylistId}

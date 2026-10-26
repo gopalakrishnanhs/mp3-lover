@@ -6,6 +6,7 @@ export interface Track {
   duration: number; // in seconds
   url: string; // ObjectURL or data URL or generated audio
   coverGradient: string; // CSS gradient string for luxury frosted glass cover
+  coverUrl?: string; // Embedded album cover data URL / blob URL
   coverIcon?: string;
   format: string; // 'MP3' | 'FLAC' | 'WAV' | 'AAC' | 'OGG'
   bitrate?: string; // e.g., '320 kbps'

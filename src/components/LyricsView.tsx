@@ -64,7 +64,12 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
       {/* Background ambient gradient glow */}
       <div 
         className="absolute inset-0 opacity-15 blur-3xl pointer-events-none -z-10"
-        style={{ background: currentTrack.coverGradient }}
+        style={{ 
+          background: currentTrack.coverUrl ? undefined : currentTrack.coverGradient,
+          backgroundImage: currentTrack.coverUrl ? `url(${currentTrack.coverUrl})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        }}
       />
 
       {/* Header */}

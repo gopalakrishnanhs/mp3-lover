@@ -25,7 +25,6 @@ class AudioEngine {
 
   constructor() {
     this.audio = new Audio();
-    this.audio.crossOrigin = 'anonymous';
     this.setupAudioListeners();
   }
 
@@ -94,6 +93,20 @@ class AudioEngine {
   }
 
   private setupAudioListeners() {
+    this.audio.addEventListener('loadedmetadata', () => {
+      const dur = this.audio.duration;
+      if (this.listeners.timeUpdate && dur > 0 && !isNaN(dur)) {
+        this.listeners.timeUpdate(this.audio.currentTime, dur);
+      }
+    });
+
+    this.audio.addEventListener('durationchange', () => {
+      const dur = this.audio.duration;
+      if (this.listeners.timeUpdate && dur > 0 && !isNaN(dur)) {
+        this.listeners.timeUpdate(this.audio.currentTime, dur);
+      }
+    });
+
     this.audio.addEventListener('timeupdate', () => {
       const current = this.audio.currentTime;
 
@@ -134,21 +147,32 @@ class AudioEngine {
     });
 
     this.audio.addEventListener('error', () => {
+      const err = this.audio.error;
+      const msg = err ? `Error code ${err.code}: ${err.message}` : 'Failed to load audio source';
+      console.warn('HTMLAudio error:', msg);
       if (this.listeners.error) {
-        this.listeners.error('Failed to load audio source.');
+        this.listeners.error(msg);
       }
     });
   }
 
   public async setSource(url: string, autoPlay = true) {
+    // Only set crossOrigin for remote HTTP(S) resources to avoid CORS failures on local protocols/blobs
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      this.audio.crossOrigin = 'anonymous';
+    } else {
+      this.audio.removeAttribute('crossorigin');
+    }
+
     this.initContext();
     this.audio.src = url;
     this.audio.load();
+
     if (autoPlay) {
       try {
         await this.play();
       } catch (err) {
-        console.warn('Auto play was prevented by browser policy:', err);
+        console.warn('Auto play was prevented by browser/system policy:', err);
       }
     }
   }

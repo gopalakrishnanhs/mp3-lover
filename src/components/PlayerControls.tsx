@@ -4,14 +4,11 @@ import {
   Pause, 
   SkipBack, 
   SkipForward, 
-  RotateCcw, 
   Shuffle, 
   Repeat, 
   Repeat1, 
   Volume2, 
   VolumeX, 
-  Sliders, 
-  FileText,
   FastForward,
   Rewind,
   Music
@@ -71,9 +68,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onSetPointA,
   onSetPointB,
   onClearAB,
-  onJumpSeconds,
-  onNavigateToTab,
-  currentTab
+  onJumpSeconds
 }) => {
   const formatTime = (secs: number) => {
     if (!secs || isNaN(secs) || secs < 0) return '0:00';
@@ -85,10 +80,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <footer className="border-t border-white/10 bg-slate-950/80 backdrop-blur-xl px-4 py-3 select-none flex flex-col gap-2 z-20 shadow-2xl">
+    <footer className="border-t border-white/10 bg-slate-950/85 backdrop-blur-xl px-3 sm:px-4 py-2 sm:py-2.5 select-none flex flex-col gap-1.5 z-20 shadow-2xl shrink-0">
       {/* Scrub Bar */}
-      <div className="flex items-center gap-3 w-full">
-        <span className="text-[11px] font-mono tabular-nums text-white/50 w-10 text-right">
+      <div className="flex items-center gap-2 sm:gap-3 w-full">
+        <span className="text-[10px] sm:text-[11px] font-mono tabular-nums text-white/50 w-9 sm:w-10 text-right shrink-0">
           {formatTime(currentTime)}
         </span>
 
@@ -108,40 +103,48 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           />
         </div>
 
-        <span className="text-[11px] font-mono tabular-nums text-white/50 w-10 text-left">
+        <span className="text-[10px] sm:text-[11px] font-mono tabular-nums text-white/50 w-9 sm:w-10 text-left shrink-0">
           {duration > 0 ? `-${formatTime(duration - currentTime)}` : '0:00'}
         </span>
       </div>
 
       {/* Main Controls Row */}
-      <div className="flex items-center justify-between gap-4">
-        {/* Left Section: Track Snapshot (Apple / WinUI mini-card) */}
-        <div className="flex items-center gap-3 w-1/4 min-w-[180px] max-w-[260px] truncate">
+      <div className="flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left Section: Track Snapshot */}
+        <div className="flex items-center gap-2 sm:gap-2.5 w-1/4 min-w-[120px] sm:min-w-[160px] max-w-[240px] truncate shrink-0">
           {currentTrack ? (
             <>
               <div
-                className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center shadow-md border border-white/15"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg shrink-0 flex items-center justify-center shadow-md border border-white/15 overflow-hidden relative"
                 style={{ background: currentTrack.coverGradient }}
               >
-                <Music className="w-5 h-5 text-white/95" />
+                {currentTrack.coverUrl ? (
+                  <img
+                    src={currentTrack.coverUrl}
+                    alt={currentTrack.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Music className="w-4 h-4 text-white/95" />
+                )}
               </div>
               <div className="min-w-0">
                 <span className="block text-xs font-semibold text-white truncate">
                   {currentTrack.title}
                 </span>
-                <span className="block text-[11px] text-white/50 truncate">
+                <span className="block text-[10px] sm:text-[11px] text-white/50 truncate">
                   {currentTrack.artist}
                 </span>
               </div>
             </>
           ) : (
-            <span className="text-xs text-white/30 italic">No track playing</span>
+            <span className="text-[11px] text-white/30 italic">No track playing</span>
           )}
         </div>
 
         {/* Center Section: Core Playback & GOM Audio Controls */}
-        <div className="flex flex-col items-center gap-1.5">
-          <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex flex-col items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             {/* Shuffle */}
             <button
               onClick={onToggleShuffle}
@@ -153,7 +156,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               <Shuffle className="w-3.5 h-3.5" />
             </button>
 
-            {/* Jump -5 seconds (GOM Audio feature) */}
+            {/* Jump -5 seconds */}
             <button
               onClick={() => onJumpSeconds(-5)}
               className="p-1.5 text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden sm:block"
@@ -165,16 +168,16 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             {/* Previous */}
             <button
               onClick={onPrev}
-              className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95"
+              className="p-1.5 sm:p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95"
               title="Previous Track"
             >
-              <SkipBack className="w-4 h-4" />
+              <SkipBack className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
-            {/* Main Play / Pause Button (Apple Glass style) */}
+            {/* Main Play / Pause Button */}
             <button
               onClick={isPlaying ? onPause : onPlay}
-              className="w-10 h-10 rounded-full bg-white text-slate-950 hover:bg-white/90 flex items-center justify-center shadow-lg shadow-white/20 transition-all hover:scale-105 active:scale-95"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white text-slate-950 hover:bg-white/90 flex items-center justify-center shadow-lg shadow-white/20 transition-all hover:scale-105 active:scale-95"
               title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -187,13 +190,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             {/* Next */}
             <button
               onClick={onNext}
-              className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95"
+              className="p-1.5 sm:p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95"
               title="Next Track"
             >
-              <SkipForward className="w-4 h-4" />
+              <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
-            {/* Jump +5 seconds (GOM Audio feature) */}
+            {/* Jump +5 seconds */}
             <button
               onClick={() => onJumpSeconds(5)}
               className="p-1.5 text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden sm:block"
@@ -221,13 +224,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </div>
 
           {/* GOM Audio A-B Repeat Strip */}
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-white/50">
-            <span className="text-white/30 mr-1 hidden sm:inline">A-B Repeat:</span>
+          <div className="flex items-center gap-1 text-[9px] sm:text-[10px] font-mono text-white/50">
+            <span className="text-white/30 hidden md:inline">A-B Repeat:</span>
             <button
               onClick={onSetPointA}
               className={`px-1.5 py-0.5 rounded border transition-colors ${
                 abRepeat.a !== null
-                  ? 'bg-sky-500/30 border-sky-400 text-sky-200'
+                  ? 'bg-sky-500/30 border-sky-400 text-sky-200 font-bold'
                   : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
               }`}
               title="Set Loop Point A"
@@ -239,7 +242,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               onClick={onSetPointB}
               className={`px-1.5 py-0.5 rounded border transition-colors ${
                 abRepeat.b !== null
-                  ? 'bg-sky-500/30 border-sky-400 text-sky-200'
+                  ? 'bg-sky-500/30 border-sky-400 text-sky-200 font-bold'
                   : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
               }`}
               title="Set Loop Point B"
@@ -260,33 +263,31 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
         </div>
 
         {/* Right Section: Volume, Speed & Panel Switches */}
-        <div className="flex items-center justify-end gap-3 w-1/4 min-w-[180px] max-w-[260px]">
+        <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 w-1/4 min-w-[120px] sm:min-w-[160px] max-w-[240px] shrink-0">
           {/* Playback Speed selector */}
           <select
             value={playbackRate}
             onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
-            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-lg px-2 py-1 text-[11px] font-mono focus:outline-none cursor-pointer"
+            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded px-1.5 py-0.5 sm:px-2 sm:py-1 text-[10px] sm:text-[11px] font-mono focus:outline-none cursor-pointer hidden sm:block"
             title="Playback Speed"
           >
-            <option value="0.5" className="bg-slate-900 text-white">0.5x</option>
             <option value="0.75" className="bg-slate-900 text-white">0.75x</option>
             <option value="1.0" className="bg-slate-900 text-white">1.0x</option>
             <option value="1.25" className="bg-slate-900 text-white">1.25x</option>
             <option value="1.5" className="bg-slate-900 text-white">1.5x</option>
-            <option value="2.0" className="bg-slate-900 text-white">2.0x</option>
           </select>
 
-          {/* Volume Control with 150% boost capability */}
-          <div className="flex items-center gap-1.5 group">
+          {/* Volume Control */}
+          <div className="flex items-center gap-1 sm:gap-1.5 group">
             <button
               onClick={onToggleMute}
               className="text-white/60 hover:text-white transition-colors"
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted || volume === 0 ? (
-                <VolumeX className="w-4 h-4 text-rose-400" />
+                <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
               ) : (
-                <Volume2 className="w-4 h-4" />
+                <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               )}
             </button>
 
@@ -297,14 +298,12 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               step="0.02"
               value={isMuted ? 0 : volume}
               onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-              className="w-16 md:w-20 cursor-pointer"
-              title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}% ${
-                volume > 1.0 ? '(Boosted)' : ''
-              }`}
+              className="w-14 sm:w-16 md:w-20 cursor-pointer"
+              title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             />
 
             {volume > 1.0 && !isMuted && (
-              <span className="text-[9px] font-mono font-bold text-amber-400">
+              <span className="text-[8px] sm:text-[9px] font-mono font-bold text-amber-400 hidden sm:inline">
                 +{Math.round((volume - 1.0) * 100)}%
               </span>
             )}

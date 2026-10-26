@@ -1,4 +1,5 @@
 import { Playlist, Track } from '../types/player';
+import { extractMetadataFromFile, ParsedAudioMetadata } from './id3Parser';
 
 const AUDIO_EXTENSIONS = [
   '.mp3', '.wav', '.flac', '.m4a', '.aac', 
@@ -51,7 +52,7 @@ export function cleanFilename(rawName: string): { title: string; artist: string 
     };
   }
 
-  // Fallback: title is cleaned filename, artist is Unknown
+  // Fallback: title is cleaned filename, artist is Local Artist
   return {
     title: strippedPrefix.replace(/_/g, ' '),
     artist: 'Local Artist'
@@ -66,9 +67,9 @@ export function isAudioFile(fileName: string, mimeType?: string): boolean {
   return hasAudioExt || isAudioMime;
 }
 
-export function parseAudioFiles(
+export async function parseAudioFiles(
   files: FileList | File[]
-): { tracks: Track[]; folderName?: string } {
+): Promise<{ tracks: Track[]; folderName?: string }> {
   const fileArray = Array.from(files);
   const audioFiles = fileArray.filter((file) => isAudioFile(file.name, file.type));
 
@@ -85,29 +86,40 @@ export function parseAudioFiles(
     }
   }
 
-  const tracks: Track[] = audioFiles.map((file, i) => {
-    const objectUrl = URL.createObjectURL(file);
-    const { title, artist } = cleanFilename(file.name);
-    const ext = file.name.split('.').pop()?.toUpperCase() || 'MP3';
-    const gradient = GRADIENT_PALETTES[i % GRADIENT_PALETTES.length];
+  const tracks: Track[] = await Promise.all(
+    audioFiles.map(async (file, i) => {
+      const objectUrl = URL.createObjectURL(file);
+      const cleaned = cleanFilename(file.name);
+      const ext = file.name.split('.').pop()?.toUpperCase() || 'MP3';
+      const gradient = GRADIENT_PALETTES[i % GRADIENT_PALETTES.length];
 
-    return {
-      id: `uploaded-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
-      title,
-      artist,
-      album: detectedFolder || 'Local Music',
-      duration: 0, // Will be updated automatically by HTML5 audio metadata on play/load
-      url: objectUrl,
-      coverGradient: gradient,
-      format: ext,
-      fileSize: formatBytes(file.size),
-      bitrate: ext === 'FLAC' ? '850 kbps' : '320 kbps',
-      sampleRate: '44.1 kHz',
-      folderPath: file.webkitRelativePath || file.name,
-      year: new Date().getFullYear().toString(),
-      isCustomUpload: true
-    };
-  });
+      // Extract ID3/FLAC metadata & embedded cover art
+      let meta: ParsedAudioMetadata = {};
+      try {
+        meta = await extractMetadataFromFile(file);
+      } catch (err) {
+        console.warn('Metadata extraction failed for:', file.name, err);
+      }
+
+      return {
+        id: `uploaded-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+        title: meta.title || cleaned.title,
+        artist: meta.artist || cleaned.artist,
+        album: meta.album || detectedFolder || 'Local Music',
+        duration: 0, // Will be updated automatically on loadedmetadata
+        url: objectUrl,
+        coverGradient: gradient,
+        coverUrl: meta.coverUrl,
+        format: ext,
+        fileSize: formatBytes(file.size),
+        bitrate: ext === 'FLAC' ? '850 kbps' : '320 kbps',
+        sampleRate: '44.1 kHz',
+        folderPath: file.webkitRelativePath || file.name,
+        year: meta.year || new Date().getFullYear().toString(),
+        isCustomUpload: true
+      };
+    })
+  );
 
   return {
     tracks,
@@ -116,32 +128,39 @@ export function parseAudioFiles(
 }
 
 export function parseNativeFiles(
-  nativeFiles: Array<{ filePath: string; fileName: string; size: number }>,
+  nativeFiles: Array<{ 
+    filePath: string; 
+    fileName: string; 
+    size: number;
+    metadata?: ParsedAudioMetadata | null;
+  }>,
   folderName?: string
 ): Track[] {
   return nativeFiles.map((item, i) => {
-    const { title, artist } = cleanFilename(item.fileName);
+    const cleaned = cleanFilename(item.fileName);
     const ext = item.fileName.split('.').pop()?.toUpperCase() || 'MP3';
     const gradient = GRADIENT_PALETTES[i % GRADIENT_PALETTES.length];
+    const meta = item.metadata || {};
     
-    // In Electron with webSecurity: false, local file paths can be loaded via file:// protocol
-    const normalizedPath = item.filePath.replace(/\\/g, '/');
-    const fileUrl = normalizedPath.startsWith('/') ? `file://${normalizedPath}` : `file:///${normalizedPath}`;
+    // In Electron, use our custom protocol app-media://load/<encodedPath>
+    // This allows byte-range streaming, fast seek, and zero CORS restrictions!
+    const fileUrl = `app-media://load/${encodeURIComponent(item.filePath)}`;
 
     return {
       id: `native-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
-      title,
-      artist,
-      album: folderName || 'Local Music',
+      title: meta.title || cleaned.title,
+      artist: meta.artist || cleaned.artist,
+      album: meta.album || folderName || 'Local Music',
       duration: 0,
       url: fileUrl,
       coverGradient: gradient,
+      coverUrl: meta.coverUrl,
       format: ext,
       fileSize: formatBytes(item.size),
       bitrate: ext === 'FLAC' ? '850 kbps' : '320 kbps',
       sampleRate: '44.1 kHz',
       folderPath: item.filePath,
-      year: new Date().getFullYear().toString(),
+      year: meta.year || new Date().getFullYear().toString(),
       isCustomUpload: true
     };
   });
