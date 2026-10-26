@@ -651,6 +651,7 @@ export default function App() {
             onNewPlaylistClick={() => setIsNewPlaylistModalOpen(true)}
             isEqualizerActive={isEqualizerActive}
             onOpenThemeModal={() => setIsThemeModalOpen(true)}
+            isPlaying={isPlaying}
           />
 
           {/* Main Body Content based on Active Tab */}

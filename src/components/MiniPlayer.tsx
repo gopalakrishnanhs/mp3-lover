@@ -11,6 +11,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { Track } from '../types/player';
+import { VintageCassetteLogo } from './VintageCassetteLogo';
 
 interface MiniPlayerProps {
   currentTrack: Track | null;
@@ -75,13 +76,16 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onRestoreFullWindow}
-          className="p-1.5 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-          title="Restore Full Player Window"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <VintageCassetteLogo size={16} isPlaying={isPlaying} />
+          <button
+            onClick={onRestoreFullWindow}
+            className="p-1.5 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+            title="Restore Full Player Window"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Scrub Bar */}

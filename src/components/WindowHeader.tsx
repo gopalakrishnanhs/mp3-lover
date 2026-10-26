@@ -13,6 +13,7 @@ import {
   Sparkles,
   Palette
 } from 'lucide-react';
+import { VintageCassetteLogo } from './VintageCassetteLogo';
 
 interface WindowHeaderProps {
   currentTab: 'player' | 'library' | 'equalizer' | 'lyrics';
@@ -26,6 +27,7 @@ interface WindowHeaderProps {
   onNewPlaylistClick: () => void;
   isEqualizerActive: boolean;
   onOpenThemeModal: () => void;
+  isPlaying?: boolean;
 }
 
 export const WindowHeader: React.FC<WindowHeaderProps> = ({
@@ -39,7 +41,8 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
   onAddFilesClick,
   onNewPlaylistClick,
   isEqualizerActive,
-  onOpenThemeModal
+  onOpenThemeModal,
+  isPlaying = false
 }) => {
   return (
     <header className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 select-none bg-slate-900/60 backdrop-blur-md">
@@ -75,11 +78,17 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold tracking-tight text-white whitespace-nowrap">
-            AeroGlass
-          </span>
-          <span className="text-xs text-white/40 font-mono">WinUI</span>
+        {/* Vintage Cassette Logo & Brand Mark */}
+        <div className="flex items-center gap-2.5">
+          <VintageCassetteLogo size={22} isPlaying={isPlaying} />
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-sm font-bold tracking-tight text-white whitespace-nowrap">
+              AeroGlass
+            </span>
+            <span className="text-[10px] text-white/40 font-mono tracking-wider">
+              RETRO
+            </span>
+          </div>
         </div>
       </div>
 
