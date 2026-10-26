@@ -1,6 +1,9 @@
 import { Playlist, Track } from '../types/player';
 
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.weba', '.wma', '.opus'];
+const AUDIO_EXTENSIONS = [
+  '.mp3', '.wav', '.flac', '.m4a', '.aac', 
+  '.ogg', '.weba', '.wma', '.opus', '.aiff', '.alac', '.ape'
+];
 
 const GRADIENT_PALETTES = [
   'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%)',
@@ -14,7 +17,7 @@ const GRADIENT_PALETTES = [
 ];
 
 function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return '0 Bytes';
+  if (!bytes || bytes === 0) return 'Unknown size';
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -22,7 +25,7 @@ function formatBytes(bytes: number, decimals = 1): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-function cleanFilename(rawName: string): { title: string; artist: string } {
+export function cleanFilename(rawName: string): { title: string; artist: string } {
   // Remove extension
   const dotIndex = rawName.lastIndexOf('.');
   const baseName = dotIndex !== -1 ? rawName.substring(0, dotIndex) : rawName;
@@ -55,41 +58,25 @@ function cleanFilename(rawName: string): { title: string; artist: string } {
   };
 }
 
-function getAudioDuration(url: string): Promise<number> {
-  return new Promise((resolve) => {
-    const audio = new Audio();
-    audio.src = url;
-    audio.preload = 'metadata';
-    const timer = setTimeout(() => {
-      resolve(180); // fallback 3 minutes if unable to decode quickly
-    }, 3000);
-
-    audio.onloadedmetadata = () => {
-      clearTimeout(timer);
-      resolve(Math.round(audio.duration) || 180);
-    };
-
-    audio.onerror = () => {
-      clearTimeout(timer);
-      resolve(180);
-    };
-  });
+export function isAudioFile(fileName: string, mimeType?: string): boolean {
+  if (!fileName) return false;
+  const lower = fileName.trim().toLowerCase();
+  const hasAudioExt = AUDIO_EXTENSIONS.some(ext => lower.endsWith(ext));
+  const isAudioMime = mimeType ? mimeType.toLowerCase().startsWith('audio') : false;
+  return hasAudioExt || isAudioMime;
 }
 
-export async function parseAudioFiles(
+export function parseAudioFiles(
   files: FileList | File[]
-): Promise<{ tracks: Track[]; folderName?: string }> {
+): { tracks: Track[]; folderName?: string } {
   const fileArray = Array.from(files);
-  const audioFiles = fileArray.filter((file) => {
-    const name = file.name.toLowerCase();
-    return AUDIO_EXTENSIONS.some((ext) => name.endsWith(ext)) || file.type.startsWith('audio/');
-  });
+  const audioFiles = fileArray.filter((file) => isAudioFile(file.name, file.type));
 
   if (audioFiles.length === 0) {
     return { tracks: [] };
   }
 
-  // Detect common folder name if imported via webkitRelativePath
+  // Detect folder name if imported via webkitRelativePath
   let detectedFolder: string | undefined;
   if (audioFiles[0].webkitRelativePath) {
     const pathParts = audioFiles[0].webkitRelativePath.split('/');
@@ -98,22 +85,18 @@ export async function parseAudioFiles(
     }
   }
 
-  const tracks: Track[] = [];
-
-  for (let i = 0; i < audioFiles.length; i++) {
-    const file = audioFiles[i];
+  const tracks: Track[] = audioFiles.map((file, i) => {
     const objectUrl = URL.createObjectURL(file);
     const { title, artist } = cleanFilename(file.name);
     const ext = file.name.split('.').pop()?.toUpperCase() || 'MP3';
-    const duration = await getAudioDuration(objectUrl);
     const gradient = GRADIENT_PALETTES[i % GRADIENT_PALETTES.length];
 
-    tracks.push({
+    return {
       id: `uploaded-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
       title,
       artist,
       album: detectedFolder || 'Local Music',
-      duration,
+      duration: 0, // Will be updated automatically by HTML5 audio metadata on play/load
       url: objectUrl,
       coverGradient: gradient,
       format: ext,
@@ -123,13 +106,45 @@ export async function parseAudioFiles(
       folderPath: file.webkitRelativePath || file.name,
       year: new Date().getFullYear().toString(),
       isCustomUpload: true
-    });
-  }
+    };
+  });
 
   return {
     tracks,
     folderName: detectedFolder
   };
+}
+
+export function parseNativeFiles(
+  nativeFiles: Array<{ filePath: string; fileName: string; size: number }>,
+  folderName?: string
+): Track[] {
+  return nativeFiles.map((item, i) => {
+    const { title, artist } = cleanFilename(item.fileName);
+    const ext = item.fileName.split('.').pop()?.toUpperCase() || 'MP3';
+    const gradient = GRADIENT_PALETTES[i % GRADIENT_PALETTES.length];
+    
+    // In Electron with webSecurity: false, local file paths can be loaded via file:// protocol
+    const normalizedPath = item.filePath.replace(/\\/g, '/');
+    const fileUrl = normalizedPath.startsWith('/') ? `file://${normalizedPath}` : `file:///${normalizedPath}`;
+
+    return {
+      id: `native-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+      title,
+      artist,
+      album: folderName || 'Local Music',
+      duration: 0,
+      url: fileUrl,
+      coverGradient: gradient,
+      format: ext,
+      fileSize: formatBytes(item.size),
+      bitrate: ext === 'FLAC' ? '850 kbps' : '320 kbps',
+      sampleRate: '44.1 kHz',
+      folderPath: item.filePath,
+      year: new Date().getFullYear().toString(),
+      isCustomUpload: true
+    };
+  });
 }
 
 export function createPlaylistFromFolder(

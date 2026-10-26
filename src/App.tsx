@@ -14,7 +14,7 @@ import {
 } from './utils/demoData';
 import { audioEngine } from './utils/audioEngine';
 import { generateSynthesizedTrack } from './utils/synthesizer';
-import { parseAudioFiles, createPlaylistFromFolder } from './utils/fileParser';
+import { parseAudioFiles, parseNativeFiles, createPlaylistFromFolder } from './utils/fileParser';
 import { WindowHeader } from './components/WindowHeader';
 import { NowPlayingView } from './components/NowPlayingView';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
@@ -59,7 +59,7 @@ export default function App() {
     }
   }, [theme]);
 
-  // Audio Playback State
+  // Audio Playback State - starts completely empty with 0 static songs!
   const [tracks, setTracks] = useState<Track[]>(INITIAL_TRACKS);
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     const saved = localStorage.getItem('aeroglass_playlists');
@@ -73,10 +73,10 @@ export default function App() {
     return INITIAL_PLAYLISTS;
   });
   const [activePlaylistId, setActivePlaylistId] = useState<string>('playlist-all');
-  const [currentTrackId, setCurrentTrackId] = useState<string>('track-1');
+  const [currentTrackId, setCurrentTrackId] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(48);
+  const [duration, setDuration] = useState(0);
 
   // Controls State
   const [volume, setVolume] = useState(0.85);
@@ -93,17 +93,16 @@ export default function App() {
   const [isSpatialAudio, setIsSpatialAudio] = useState(false);
 
   // Favorites & Toast
-  const [favorites, setFavorites] = useState<string[]>(['track-1', 'track-2']);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // File Inputs
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const filesInputRef = useRef<HTMLInputElement | null>(null);
-  const isDraggingRef = useRef(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Get active track object
-  const currentTrack = tracks.find((t) => t.id === currentTrackId) || tracks[0] || null;
+  const currentTrack = tracks.find((t) => t.id === currentTrackId) || null;
 
   // Get current active playlist tracks
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) || playlists[0];
@@ -119,47 +118,20 @@ export default function App() {
     }, 4000);
   };
 
-  // Initialize synthesized audio for demo tracks so user hears immediate sound!
+  // Windows File Association & Open File from Electron
   useEffect(() => {
-    let isCancelled = false;
-
-    async function initSynthTracks() {
-      try {
-        const synthTypes: Array<'synthwave' | 'lofi' | 'techno' | 'jazz' | 'ambient'> = [
-          'synthwave',
-          'lofi',
-          'techno',
-          'jazz',
-          'ambient'
-        ];
-
-        const updated = await Promise.all(
-          INITIAL_TRACKS.map(async (t, idx) => {
-            if (!t.url) {
-              const url = await generateSynthesizedTrack(synthTypes[idx % synthTypes.length], t.duration);
-              return { ...t, url };
-            }
-            return t;
-          })
-        );
-
-        if (!isCancelled) {
-          setTracks((prev) => {
-            return prev.map((t) => {
-              const match = updated.find((u) => u.id === t.id);
-              return match ? { ...t, url: match.url } : t;
-            });
-          });
+    const electron = (window as unknown as { electronAPI?: { onOpenFile?: (cb: (fp: string) => void) => void } }).electronAPI;
+    if (electron?.onOpenFile) {
+      electron.onOpenFile((filePath: string) => {
+        const fileName = filePath.split(/[/\\]/).pop() || 'Track';
+        const [track] = parseNativeFiles([{ filePath, fileName, size: 0 }]);
+        if (track) {
+          setTracks((prev) => [track, ...prev.filter((t) => t.folderPath !== filePath)]);
+          handlePlayTrack(track);
+          showToast(`Playing "${track.title}" from Windows`);
         }
-      } catch (e) {
-        console.warn('Synthesizer initialization error:', e);
-      }
+      });
     }
-
-    initSynthTracks();
-    return () => {
-      isCancelled = true;
-    };
   }, []);
 
   // Save playlists to localStorage
@@ -441,6 +413,86 @@ export default function App() {
   };
 
   // FOLDER IMPORT: Play all songs in folder (GOM Audio signature feature!)
+  const handleOpenFolderClick = async () => {
+    const electron = (window as unknown as { 
+      electronAPI?: { 
+        openFolderDialog?: () => Promise<{ folderName: string; folderPath: string; files: { filePath: string; fileName: string; size: number }[] } | null> 
+      } 
+    }).electronAPI;
+
+    if (electron?.openFolderDialog) {
+      try {
+        const res = await electron.openFolderDialog();
+        if (!res || !res.files || res.files.length === 0) {
+          showToast('No audio files found in selected folder');
+          return;
+        }
+        const newTracks = parseNativeFiles(res.files);
+        const playlistName = res.folderName ? `📁 ${res.folderName}` : `Folder Import (${newTracks.length} songs)`;
+        const newTrackIds = newTracks.map((t) => t.id);
+
+        setTracks((prev) => [...prev, ...newTracks]);
+
+        const folderPlaylist = createPlaylistFromFolder(playlistName, newTrackIds);
+        setPlaylists((prev) => {
+          const updated = prev.map((pl) => {
+            if (pl.id === 'playlist-all') {
+              return { ...pl, trackIds: [...pl.trackIds, ...newTrackIds] };
+            }
+            return pl;
+          });
+          return [...updated, folderPlaylist];
+        });
+
+        setActivePlaylistId(folderPlaylist.id);
+        await handlePlayTrack(newTracks[0]);
+        setCurrentTab('player');
+        showToast(`Loaded ${newTracks.length} tracks from ${res.folderName}. Playing now!`);
+        return;
+      } catch (err) {
+        console.warn('Native folder open failed, falling back to input:', err);
+      }
+    }
+
+    folderInputRef.current?.click();
+  };
+
+  // FILE IMPORT: Add audio files
+  const handleAddFilesClick = async () => {
+    const electron = (window as unknown as { 
+      electronAPI?: { 
+        openFilesDialog?: () => Promise<{ filePath: string; fileName: string; size: number }[] | null> 
+      } 
+    }).electronAPI;
+
+    if (electron?.openFilesDialog) {
+      try {
+        const files = await electron.openFilesDialog();
+        if (!files || files.length === 0) return;
+        const newTracks = parseNativeFiles(files);
+        const newTrackIds = newTracks.map((t) => t.id);
+
+        setTracks((prev) => [...prev, ...newTracks]);
+        setPlaylists((prev) =>
+          prev.map((pl) => {
+            if (pl.id === activePlaylistId || pl.id === 'playlist-all') {
+              const combined = Array.from(new Set([...pl.trackIds, ...newTrackIds]));
+              return { ...pl, trackIds: combined };
+            }
+            return pl;
+          })
+        );
+        showToast(`Added ${newTracks.length} tracks to library`);
+        return;
+      } catch (err) {
+        console.warn('Native files open failed, falling back to input:', err);
+      }
+    }
+
+    filesInputRef.current?.click();
+  };
+
+  // Browser input fallback: Folder Selected
   const handleFolderSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const { tracks: newTracks, folderName } = await parseAudioFiles(e.target.files);
@@ -481,7 +533,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  // FILE IMPORT: Add audio files
+  // Browser input fallback: File Selected
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const { tracks: newTracks } = await parseAudioFiles(e.target.files);
@@ -553,16 +605,15 @@ export default function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Hidden file inputs for "Play folder" and "Add files" */}
+      {/* Hidden file inputs: without accept="audio/*" on webkitdirectory so Windows doesn't filter out directory files */}
       <input
         type="file"
         ref={folderInputRef}
         onChange={handleFolderSelected}
         // @ts-ignore
-        webkitdirectory="true"
+        webkitdirectory=""
         directory=""
         multiple
-        accept="audio/*"
         className="hidden"
       />
       <input
@@ -570,11 +621,11 @@ export default function App() {
         ref={filesInputRef}
         onChange={handleFilesSelected}
         multiple
-        accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.weba"
+        accept=".mp3,.wav,.flac,.m4a,.aac,.ogg,.weba,.wma,.opus,audio/*"
         className="hidden"
       />
 
-      {/* Modern Windows 11 / macOS Frosted Desktop Canvas with floating ambient orbs reacting to theme colors */}
+      {/* Modern Windows 11 Acrylic Desktop Canvas with ambient lighting */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div 
           className="absolute -top-32 -left-32 w-96 h-96 rounded-full blur-[130px] opacity-25 transition-all duration-700" 
@@ -600,7 +651,7 @@ export default function App() {
 
       {/* Drag & Drop Overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-50 bg-sky-950/80 backdrop-blur-md flex flex-col items-center justify-center text-white border-2 border-dashed border-sky-400 m-6 rounded-3xl animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-sky-950/80 backdrop-blur-md flex flex-col items-center justify-center text-white border-2 border-dashed border-sky-400 m-6 rounded-none animate-in fade-in duration-200">
           <UploadCloud className="w-16 h-16 text-sky-400 mb-4 animate-bounce" />
           <h2 className="text-2xl font-bold">Drop Audio Files or Folders Here</h2>
           <p className="text-sm text-sky-200 mt-2">
@@ -611,7 +662,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-slate-900/90 text-white text-xs font-medium rounded-full shadow-2xl border border-white/20 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-200">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-slate-900/90 text-white text-xs font-medium rounded-md shadow-2xl border border-white/20 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-200">
           <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -636,8 +687,8 @@ export default function App() {
           onRestoreFullWindow={() => setIsMiniMode(false)}
         />
       ) : (
-        /* Full Desktop Window (WinUI Acrylic + Apple Glass Window Frame) */
-        <main className="relative z-10 w-full h-full max-w-[1240px] max-h-[820px] m-0 md:m-6 flex flex-col rounded-none md:rounded-2xl glass-panel shadow-2xl overflow-hidden border border-white/15">
+        /* Full Desktop Window - Windows UI Acrylic with crisp square corners (no round borders) */
+        <main className="relative z-10 w-full h-full max-w-[1240px] max-h-[820px] m-0 md:m-4 flex flex-col rounded-none glass-panel shadow-2xl overflow-hidden border border-white/15">
           {/* Window Header */}
           <WindowHeader
             currentTab={currentTab}
@@ -646,8 +697,8 @@ export default function App() {
             artistName={currentTrack?.artist}
             isMiniMode={isMiniMode}
             onToggleMiniMode={() => setIsMiniMode(true)}
-            onOpenFolderClick={() => folderInputRef.current?.click()}
-            onAddFilesClick={() => filesInputRef.current?.click()}
+            onOpenFolderClick={handleOpenFolderClick}
+            onAddFilesClick={handleAddFilesClick}
             onNewPlaylistClick={() => setIsNewPlaylistModalOpen(true)}
             isEqualizerActive={isEqualizerActive}
             onOpenThemeModal={() => setIsThemeModalOpen(true)}
@@ -676,7 +727,7 @@ export default function App() {
                   activePlaylistId={activePlaylistId}
                   onSelectPlaylist={setActivePlaylistId}
                   onNewPlaylist={() => setIsNewPlaylistModalOpen(true)}
-                  onOpenFolder={() => folderInputRef.current?.click()}
+                  onOpenFolder={handleOpenFolderClick}
                   onDeletePlaylist={handleDeletePlaylist}
                   totalTracksCount={tracks.length}
                 />
@@ -692,8 +743,8 @@ export default function App() {
                     activePlaylistId !== 'playlist-all' ? handleRemoveTrackFromPlaylist : undefined
                   }
                   isCustomPlaylist={activePlaylistId !== 'playlist-all'}
-                  onOpenFolder={() => folderInputRef.current?.click()}
-                  onAddFiles={() => filesInputRef.current?.click()}
+                  onOpenFolder={handleOpenFolderClick}
+                  onAddFiles={handleAddFilesClick}
                 />
               </div>
             )}
